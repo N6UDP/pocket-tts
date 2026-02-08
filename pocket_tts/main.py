@@ -39,9 +39,10 @@ cli_app = typer.Typer(
 # The pocket-tts server implementation
 # ------------------------------------------------------
 
-# Global model instance
 tts_model: TTSModel | None = None
 global_model_state = None
+# Allow local file paths for voice_url in /tts endpoint
+allow_local_paths = False
 
 web_app = FastAPI(
     title="Kyutai Pocket TTS API", description="Text-to-Speech generation API", version="1.0.0"
@@ -134,17 +135,28 @@ def text_to_speech(
 
     # Use the appropriate model state
     if voice_url is not None:
-        if not (
-            voice_url.startswith("http://")
-            or voice_url.startswith("https://")
-            or voice_url.startswith("hf://")
-            or voice_url in PREDEFINED_VOICES
-        ):
-            raise HTTPException(
-                status_code=400, detail="voice_url must start with http://, https://, or hf://"
-            )
+        # Accept local file paths if allow_local_paths is enabled
+        if allow_local_paths:
+            if not (voice_url.startswith("http://")
+                    or voice_url.startswith("https://")
+                    or voice_url.startswith("hf://")
+                    or voice_url in PREDEFINED_VOICES
+                    or os.path.exists(voice_url)):
+                raise HTTPException(
+                    status_code=400, detail="voice_url must be a valid URL, predefined voice, or existing local file path when --local-paths is enabled"
+                )
+        else:
+            if not (
+                voice_url.startswith("http://")
+                or voice_url.startswith("https://")
+                or voice_url.startswith("hf://")
+                or voice_url in PREDEFINED_VOICES
+            ):
+                raise HTTPException(
+                    status_code=400, detail="voice_url must start with http://, https://, or hf://"
+                )
         model_state = tts_model._cached_get_state_for_audio_prompt(voice_url)
-        logging.warning("Using voice from URL: %s", voice_url)
+        logging.warning("Using voice from URL or local path: %s", voice_url)
     elif voice_wav is not None:
         # Use uploaded voice file - preserve extension for format detection
         suffix = Path(voice_wav.filename).suffix if voice_wav.filename else ".wav"
@@ -187,15 +199,26 @@ def serve(
             help="Path to locally-saved model config .yaml file or model variant signature"
         ),
     ] = DEFAULT_VARIANT,
+    local_paths: Annotated[
+        bool,
+        typer.Option(
+            "--local-paths",
+            help="Allow local file paths for voice_url in /tts endpoint (for trusted environments)",
+        ),
+    ] = False,
 ):
     """Start the FastAPI server."""
 
-    global tts_model, global_model_state
+    global tts_model, global_model_state, allow_local_paths
     tts_model = TTSModel.load_model(config)
 
     # Pre-load the voice prompt
     global_model_state = tts_model.get_state_for_audio_prompt(voice)
     logger.info(f"The size of the model state is {size_of_dict(global_model_state) // 1e6} MB")
+
+    allow_local_paths = local_paths
+    if allow_local_paths:
+        logger.warning("Local file path support enabled for /tts endpoint (voice_url)")
 
     uvicorn.run("pocket_tts.main:web_app", host=host, port=port, reload=reload)
 
