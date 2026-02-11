@@ -19,6 +19,8 @@ This starts a server on `http://localhost:8000` with the default voice model.
 - `--port PORT`: Port to bind to (default: 8000)
 - `--reload`: Enable auto-reload for development
 - `--config`: Path to a custom config .yaml
+- `--device DEVICE`: Device to use (default: "cpu", you may not get a speedup by using a gpu since it's a small model)
+- `--local-paths`: Allow local file paths for voice_url in /tts endpoint (for trusted environments)
 
 ## Examples
 

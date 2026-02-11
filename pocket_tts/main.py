@@ -199,6 +199,7 @@ def serve(
             help="Path to locally-saved model config .yaml file or model variant signature"
         ),
     ] = DEFAULT_VARIANT,
+    device: Annotated[str, typer.Option(help="Device to use")] = "cpu",
     local_paths: Annotated[
         bool,
         typer.Option(
@@ -209,8 +210,13 @@ def serve(
 ):
     """Start the FastAPI server."""
 
+    if "cuda" in device:
+        # Cuda graphs capturing does not play nice with multithreading.
+        os.environ["NO_CUDA_GRAPH"] = "1"
+
     global tts_model, global_model_state, allow_local_paths
     tts_model = TTSModel.load_model(config)
+    tts_model.to(device)
 
     # Pre-load the voice prompt
     global_model_state = tts_model.get_state_for_audio_prompt(voice)
